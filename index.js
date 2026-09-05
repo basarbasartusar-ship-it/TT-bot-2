@@ -407,15 +407,19 @@ async function fetchVideoBuffer(videoUrl) {
 }
 
 async function finishTiktokDownload(ctx, link) {
+  const statusMessageId = getSession(ctx.chat.id).active_message_id;
   const { videoUrl, title } = await fetchTiktokVideoInfo(link);
   const buffer = await fetchVideoBuffer(videoUrl);
   clearSession(ctx.chat.id);
+  if (statusMessageId) {
+    await bot.telegram.deleteMessage(ctx.chat.id, statusMessageId).catch(() => {});
+  }
   await ctx.replyWithVideo(
     { source: buffer, filename: "tiktok.mp4" },
     {
       caption: boldUiText(`<b>✅ ভিডিও রেডি (watermark ছাড়া)</b>\n\n🎵 ${escapeHtml(title || "TikTok video")}\n\n📥 ভিডিওর নিচের ডাউনলোড আইকনে চেপে গ্যালারিতে সেভ করো।`),
       parse_mode: "HTML",
-      ...keyboard([[btn("Another Video", "tiktok:start", "success"), btn("Back to Menu", "menu")]]),
+      ...keyboard([[btn("Another Video", "tiktok:restart", "success"), btn("Back to Menu", "menu:media")]]),
     },
   );
 }
@@ -679,6 +683,14 @@ bot.command("help", showHelp);
 bot.action("menu", showMain);
 bot.action("upload:start", showUploadPhoto);
 bot.action("tiktok:start", showTiktokPrompt);
+bot.action("tiktok:restart", async (ctx) => {
+  await ctx.deleteMessage().catch(() => {});
+  await showTiktokPrompt(ctx);
+});
+bot.action("menu:media", async (ctx) => {
+  await ctx.deleteMessage().catch(() => {});
+  await showMain(ctx, { fresh: true });
+});
 bot.action("links:0", (ctx) => showLinks(ctx, 0));
 bot.action(/^links:(\d+)$/, (ctx) => showLinks(ctx, Number(ctx.match[1])));
 bot.action("settings", showSettings);
