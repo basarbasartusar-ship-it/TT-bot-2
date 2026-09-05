@@ -269,6 +269,7 @@ function mainMenuRows(ctx) {
     [btn("Upload Image", "upload:start", "success")],
     [btn("My Links", "links:0")],
     [btn("TikTok Video", "tiktok:start", "success")],
+    [btn("Facebook Video", "fb:start", "success")],
     [btn("Settings", "settings"), btn("Help", "help")],
   ];
   if (isAdmin(ctx.from?.id)) rows.push([btn("Admin Panel", "admin")]);
@@ -420,6 +421,61 @@ async function finishTiktokDownload(ctx, link) {
       caption: boldUiText(`<b>✅ ভিডিও রেডি (watermark ছাড়া)</b>\n\n🎵 ${escapeHtml(title || "TikTok video")}\n\n📥 ভিডিওর নিচের ডাউনলোড আইকনে চেপে গ্যালারিতে সেভ করো।`),
       parse_mode: "HTML",
       ...keyboard([[btn("Another Video", "tiktok:restart", "success"), btn("Back to Menu", "menu:media")]]),
+    },
+  );
+}
+
+async function showFacebookPrompt(ctx) {
+  saveSession(ctx.chat.id, { state: "awaiting_fb_link", temp_data: {} });
+  await sendScreen(
+    ctx.chat.id,
+    "<b>📘 Facebook ভিডিও</b>\n\n🔗 Facebook ভিডিওর (পাবলিক পোস্ট) লিংকটা পাঠাও।",
+    [[btn("Cancel", "menu", "danger")]],
+    ctx,
+  );
+}
+
+async function fetchFacebookVideoInfo(link) {
+  const response = await fetch(link, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36",
+    },
+    redirect: "follow",
+  });
+  if (!response.ok) throw new Error(`Facebook পেজ খোলা যায়নি (HTTP ${response.status})`);
+  const html = await response.text();
+  const match =
+    html.match(/"browser_native_hd_url":"([^"]+)"/) ||
+    html.match(/"browser_native_sd_url":"([^"]+)"/) ||
+    html.match(/hd_src:"([^"]+)"/) ||
+    html.match(/sd_src:"([^"]+)"/) ||
+    html.match(/"playable_url_quality_hd":"([^"]+)"/) ||
+    html.match(/"playable_url":"([^"]+)"/);
+  if (!match) throw new Error("ভিডিও লিংক পাওয়া যায়নি। পোস্টটা পাবলিক আছে কিনা চেক করো।");
+  let videoUrl;
+  try {
+    videoUrl = JSON.parse(`"${match[1]}"`);
+  } catch {
+    videoUrl = match[1].replace(/\\\//g, "/");
+  }
+  return { videoUrl };
+}
+
+async function finishFacebookDownload(ctx, link) {
+  const statusMessageId = getSession(ctx.chat.id).active_message_id;
+  const { videoUrl } = await fetchFacebookVideoInfo(link);
+  const buffer = await fetchVideoBuffer(videoUrl);
+  clearSession(ctx.chat.id);
+  if (statusMessageId) {
+    await bot.telegram.deleteMessage(ctx.chat.id, statusMessageId).catch(() => {});
+  }
+  await ctx.replyWithVideo(
+    { source: buffer, filename: "facebook.mp4" },
+    {
+      caption: boldUiText(`<b>✅ ভিডিও রেডি</b>\n\n📥 ভিডিওর নিচের ডাউনলোড আইকনে চেপে গ্যালারিতে সেভ করো।`),
+      parse_mode: "HTML",
+      ...keyboard([[btn("Another Video", "fb:restart", "success"), btn("Back to Menu", "menu:media")]]),
     },
   );
 }
@@ -691,6 +747,11 @@ bot.action("menu:media", async (ctx) => {
   await ctx.deleteMessage().catch(() => {});
   await showMain(ctx, { fresh: true });
 });
+bot.action("fb:start", showFacebookPrompt);
+bot.action("fb:restart", async (ctx) => {
+  await ctx.deleteMessage().catch(() => {});
+  await showFacebookPrompt(ctx);
+});
 bot.action("links:0", (ctx) => showLinks(ctx, 0));
 bot.action(/^links:(\d+)$/, (ctx) => showLinks(ctx, Number(ctx.match[1])));
 bot.action("settings", showSettings);
@@ -819,6 +880,30 @@ bot.on("text", async (ctx) => {
       return;
     }
     await finishUpload(ctx, { ...session.temp_data, expiresAt });
+    return;
+  }
+  if (session.state === "awaiting_fb_link") {
+    await deleteIncoming(ctx);
+    if (!/facebook\.com|fb\.watch/i.test(text)) {
+      await sendScreen(
+        ctx.chat.id,
+        "<b>⚠️ এটা সঠিক Facebook লিংক মনে হচ্ছে না</b>\n\n🔗 পুরো Facebook ভিডিও লিংকটা পাঠাও।",
+        [[btn("Try Again", "fb:start", "success"), btn("Back to Menu", "menu")]],
+        ctx,
+      );
+      return;
+    }
+    await sendScreen(ctx.chat.id, "<b>⏬ ভিডিও আনা হচ্ছে…</b>\n\n🔄 একটু অপেক্ষা করো।", [], ctx);
+    try {
+      await finishFacebookDownload(ctx, text);
+    } catch (error) {
+      await sendScreen(
+        ctx.chat.id,
+        `<b>⚠️ ডাউনলোড করা যায়নি</b>\n\n${escapeHtml(error.message)}`,
+        [[btn("Try Again", "fb:start", "success"), btn("Back to Menu", "menu")]],
+        ctx,
+      );
+    }
     return;
   }
   if (session.state === "awaiting_tiktok_link") {
