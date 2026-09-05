@@ -268,6 +268,7 @@ function mainMenuRows(ctx) {
   const rows = [
     [btn("Upload Image", "upload:start", "success")],
     [btn("My Links", "links:0")],
+    [btn("TikTok Video", "tiktok:start", "success")],
     [btn("Settings", "settings"), btn("Help", "help")],
   ];
   if (isAdmin(ctx.from?.id)) rows.push([btn("Admin Panel", "admin")]);
@@ -375,6 +376,48 @@ async function apiRequest(endpoint, options = {}) {
   }
   if (!response.ok) throw new Error(`${response.status}: ${typeof body === "string" ? body : JSON.stringify(body)}`);
   return body;
+}
+
+async function showTiktokPrompt(ctx) {
+  saveSession(ctx.chat.id, { state: "awaiting_tiktok_link", temp_data: {} });
+  await sendScreen(
+    ctx.chat.id,
+    "<b>🎵 TikTok ভিডিও</b>\n\n🔗 TikTok ভিডিওর লিংকটা পাঠাও।",
+    [[btn("Cancel", "menu", "danger")]],
+    ctx,
+  );
+}
+
+async function fetchTiktokVideoInfo(link) {
+  const apiUrl = `https://www.tikwm.com/api/?url=${encodeURIComponent(link)}`;
+  const response = await fetch(apiUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!response.ok) throw new Error(`TikTok API HTTP ${response.status}`);
+  const body = await response.json();
+  if (body.code !== 0 || !body.data) throw new Error(body.msg || "ভিডিও পাওয়া যায়নি।");
+  const rawUrl = body.data.play || body.data.hdplay || body.data.wmplay;
+  if (!rawUrl) throw new Error("ভিডিওর লিংক পাওয়া যায়নি।");
+  const videoUrl = rawUrl.startsWith("http") ? rawUrl : `https://www.tikwm.com${rawUrl}`;
+  return { videoUrl, title: body.data.title || "" };
+}
+
+async function fetchVideoBuffer(videoUrl) {
+  const response = await fetch(videoUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!response.ok) throw new Error(`ভিডিও ডাউনলোড ব্যর্থ (HTTP ${response.status})`);
+  return Buffer.from(await response.arrayBuffer());
+}
+
+async function finishTiktokDownload(ctx, link) {
+  const { videoUrl, title } = await fetchTiktokVideoInfo(link);
+  const buffer = await fetchVideoBuffer(videoUrl);
+  clearSession(ctx.chat.id);
+  await ctx.replyWithVideo(
+    { source: buffer, filename: "tiktok.mp4" },
+    {
+      caption: boldUiText(`<b>✅ ভিডিও রেডি (watermark ছাড়া)</b>\n\n🎵 ${escapeHtml(title || "TikTok video")}\n\n📥 ভিডিওর নিচের ডাউনলোড আইকনে চেপে গ্যালারিতে সেভ করো।`),
+      parse_mode: "HTML",
+      ...keyboard([[btn("Another Video", "tiktok:start", "success"), btn("Back to Menu", "menu")]]),
+    },
+  );
 }
 
 async function uploadImage(buffer, filename, contentType) {
@@ -635,6 +678,7 @@ bot.command("help", showHelp);
 
 bot.action("menu", showMain);
 bot.action("upload:start", showUploadPhoto);
+bot.action("tiktok:start", showTiktokPrompt);
 bot.action("links:0", (ctx) => showLinks(ctx, 0));
 bot.action(/^links:(\d+)$/, (ctx) => showLinks(ctx, Number(ctx.match[1])));
 bot.action("settings", showSettings);
@@ -763,6 +807,30 @@ bot.on("text", async (ctx) => {
       return;
     }
     await finishUpload(ctx, { ...session.temp_data, expiresAt });
+    return;
+  }
+  if (session.state === "awaiting_tiktok_link") {
+    await deleteIncoming(ctx);
+    if (!/tiktok\.com/i.test(text)) {
+      await sendScreen(
+        ctx.chat.id,
+        "<b>⚠️ এটা সঠিক TikTok লিংক মনে হচ্ছে না</b>\n\n🔗 পুরো TikTok ভিডিও লিংকটা পাঠাও।",
+        [[btn("Try Again", "tiktok:start", "success"), btn("Back to Menu", "menu")]],
+        ctx,
+      );
+      return;
+    }
+    await sendScreen(ctx.chat.id, "<b>⏬ ভিডিও আনা হচ্ছে…</b>\n\n🔄 একটু অপেক্ষা করো।", [], ctx);
+    try {
+      await finishTiktokDownload(ctx, text);
+    } catch (error) {
+      await sendScreen(
+        ctx.chat.id,
+        `<b>⚠️ ডাউনলোড করা যায়নি</b>\n\n${escapeHtml(error.message)}`,
+        [[btn("Try Again", "tiktok:start", "success"), btn("Back to Menu", "menu")]],
+        ctx,
+      );
+    }
     return;
   }
   if (session.state === "awaiting_edit_caption") {
