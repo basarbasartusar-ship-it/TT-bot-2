@@ -11,6 +11,7 @@
     "node": ">=22 <26"
   },
   "dependencies": {
+    "@distube/ytdl-core": "^4.15.8",
     "better-sqlite3": "^11.7.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

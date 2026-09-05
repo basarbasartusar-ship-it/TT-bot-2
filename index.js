@@ -7,6 +7,7 @@ const express = require("express");
 const cron = require("node-cron");
 const Database = require("better-sqlite3");
 const { Telegraf, Markup } = require("telegraf");
+const ytdl = require("@distube/ytdl-core");
 
 const PORT = Number(process.env.PORT || 3000);
 const TOKEN = process.env.TOKEN;
@@ -270,6 +271,7 @@ function mainMenuRows(ctx) {
     [btn("My Links", "links:0")],
     [btn("TikTok Video", "tiktok:start", "success")],
     [btn("Facebook Video", "fb:start", "success")],
+    [btn("YouTube Video", "yt:start", "success")],
     [btn("Settings", "settings"), btn("Help", "help")],
   ];
   if (isAdmin(ctx.from?.id)) rows.push([btn("Admin Panel", "admin")]);
@@ -476,6 +478,64 @@ async function finishFacebookDownload(ctx, link) {
       caption: boldUiText(`<b>✅ ভিডিও রেডি</b>\n\n📥 ভিডিওর নিচের ডাউনলোড আইকনে চেপে গ্যালারিতে সেভ করো।`),
       parse_mode: "HTML",
       ...keyboard([[btn("Another Video", "fb:restart", "success"), btn("Back to Menu", "menu:media")]]),
+    },
+  );
+}
+
+async function showYoutubePrompt(ctx) {
+  saveSession(ctx.chat.id, { state: "awaiting_yt_link", temp_data: {} });
+  await sendScreen(
+    ctx.chat.id,
+    "<b>▶️ YouTube ভিডিও</b>\n\n🔗 YouTube ভিডিওর লিংকটা পাঠাও।",
+    [[btn("Cancel", "menu", "danger")]],
+    ctx,
+  );
+}
+
+async function fetchYoutubeFormat(link) {
+  if (!ytdl.validateURL(link)) throw new Error("এটা সঠিক YouTube লিংক মনে হচ্ছে না।");
+  const info = await ytdl.getInfo(link);
+  const format =
+    ytdl.chooseFormat(info.formats, { quality: "18" }) ||
+    ytdl.chooseFormat(info.formats, { filter: "audioandvideo", quality: "highest" });
+  if (!format) throw new Error("ডাউনলোডযোগ্য ফরম্যাট পাওয়া যায়নি।");
+  return { info, format };
+}
+
+function streamToBuffer(stream, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    stream.on("data", (chunk) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        stream.destroy();
+        reject(new Error("ভিডিওটা ৪৫MB এর বেশি — Telegram-এ পাঠানো যাচ্ছে না। ছোট ভিডিও ট্রাই করো।"));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", reject);
+  });
+}
+
+async function finishYoutubeDownload(ctx, link) {
+  const statusMessageId = getSession(ctx.chat.id).active_message_id;
+  const { info, format } = await fetchYoutubeFormat(link);
+  const stream = ytdl.downloadFromInfo(info, { format });
+  const buffer = await streamToBuffer(stream, 45 * 1024 * 1024);
+  clearSession(ctx.chat.id);
+  if (statusMessageId) {
+    await bot.telegram.deleteMessage(ctx.chat.id, statusMessageId).catch(() => {});
+  }
+  const title = info.videoDetails?.title || "YouTube video";
+  await ctx.replyWithVideo(
+    { source: buffer, filename: "youtube.mp4" },
+    {
+      caption: boldUiText(`<b>✅ ভিডিও রেডি</b>\n\n🎬 ${escapeHtml(title)}\n\n📥 ভিডিওর নিচের ডাউনলোড আইকনে চেপে গ্যালারিতে সেভ করো।`),
+      parse_mode: "HTML",
+      ...keyboard([[btn("Another Video", "yt:restart", "success"), btn("Back to Menu", "menu:media")]]),
     },
   );
 }
@@ -752,6 +812,11 @@ bot.action("fb:restart", async (ctx) => {
   await ctx.deleteMessage().catch(() => {});
   await showFacebookPrompt(ctx);
 });
+bot.action("yt:start", showYoutubePrompt);
+bot.action("yt:restart", async (ctx) => {
+  await ctx.deleteMessage().catch(() => {});
+  await showYoutubePrompt(ctx);
+});
 bot.action("links:0", (ctx) => showLinks(ctx, 0));
 bot.action(/^links:(\d+)$/, (ctx) => showLinks(ctx, Number(ctx.match[1])));
 bot.action("settings", showSettings);
@@ -880,6 +945,30 @@ bot.on("text", async (ctx) => {
       return;
     }
     await finishUpload(ctx, { ...session.temp_data, expiresAt });
+    return;
+  }
+  if (session.state === "awaiting_yt_link") {
+    await deleteIncoming(ctx);
+    if (!/youtube\.com|youtu\.be/i.test(text)) {
+      await sendScreen(
+        ctx.chat.id,
+        "<b>⚠️ এটা সঠিক YouTube লিংক মনে হচ্ছে না</b>\n\n🔗 পুরো YouTube ভিডিও লিংকটা পাঠাও।",
+        [[btn("Try Again", "yt:start", "success"), btn("Back to Menu", "menu")]],
+        ctx,
+      );
+      return;
+    }
+    await sendScreen(ctx.chat.id, "<b>⏬ ভিডিও আনা হচ্ছে…</b>\n\n🔄 একটু অপেক্ষা করো।", [], ctx);
+    try {
+      await finishYoutubeDownload(ctx, text);
+    } catch (error) {
+      await sendScreen(
+        ctx.chat.id,
+        `<b>⚠️ ডাউনলোড করা যায়নি</b>\n\n${escapeHtml(error.message)}`,
+        [[btn("Try Again", "yt:start", "success"), btn("Back to Menu", "menu")]],
+        ctx,
+      );
+    }
     return;
   }
   if (session.state === "awaiting_fb_link") {
