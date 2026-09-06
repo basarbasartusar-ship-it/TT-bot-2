@@ -556,8 +556,15 @@ const POLLINATIONS_API_KEY = process.env.POLLINATIONS_API_KEY || "";
 
 async function fetchAiImageBuffer(prompt) {
   const seed = Math.floor(Math.random() * 1_000_000_000);
-  let url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}`;
-  if (POLLINATIONS_API_KEY) url += `&key=${encodeURIComponent(POLLINATIONS_API_KEY)}`;
+  if (POLLINATIONS_API_KEY) {
+    const url = `https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?model=flux&seed=${seed}`;
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${POLLINATIONS_API_KEY}` } });
+    if (!response.ok) throw new Error(`ইমেজ তৈরি করা যায়নি (HTTP ${response.status})`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length < 1000) throw new Error("ইমেজ তৈরি ব্যর্থ হয়েছে, আবার চেষ্টা করো।");
+    return buffer;
+  }
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}`;
   const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
   if (!response.ok) throw new Error(`ইমেজ তৈরি করা যায়নি (HTTP ${response.status})`);
   const buffer = Buffer.from(await response.arrayBuffer());
@@ -620,19 +627,31 @@ async function handleAiEditPhoto(ctx) {
 }
 
 async function fetchAiEditBuffer(imageUrl, prompt) {
-  const seed = Math.floor(Math.random() * 1_000_000_000);
-  let url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=kontext&image=${encodeURIComponent(imageUrl)}&nologo=true&seed=${seed}`;
-  if (POLLINATIONS_API_KEY) url += `&key=${encodeURIComponent(POLLINATIONS_API_KEY)}`;
-  const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-  if (!response.ok) {
-    if (response.status === 500 && !POLLINATIONS_API_KEY) {
-      throw new Error("এডিট মডেলে এখন ফ্রি অ্যাক্সেস নেই। enter.pollinations.ai থেকে ফ্রি API key বানিয়ে Render-এর Environment-এ POLLINATIONS_API_KEY বসাও।");
-    }
-    throw new Error(`ইমেজ এডিট করা যায়নি (HTTP ${response.status})`);
+  if (!POLLINATIONS_API_KEY) {
+    throw new Error("এডিট ফিচারের জন্য POLLINATIONS_API_KEY দরকার। enter.pollinations.ai থেকে ফ্রি key বানিয়ে Render-এর Environment-এ বসাও।");
   }
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (buffer.length < 1000) throw new Error("এডিট ব্যর্থ হয়েছে, আবার চেষ্টা করো।");
-  return buffer;
+  const response = await fetch("https://gen.pollinations.ai/v1/images/generations", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${POLLINATIONS_API_KEY}`,
+    },
+    body: JSON.stringify({ model: "kontext", prompt, image: imageUrl, response_format: "b64_json" }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body) {
+    const detail = body?.error?.message || `HTTP ${response.status}`;
+    throw new Error(`ইমেজ এডিট করা যায়নি (${detail})`);
+  }
+  const b64 = body?.data?.[0]?.b64_json;
+  const outUrl = body?.data?.[0]?.url;
+  if (b64) return Buffer.from(b64, "base64");
+  if (outUrl) {
+    const imgResponse = await fetch(outUrl);
+    if (!imgResponse.ok) throw new Error(`এডিট করা ছবি ডাউনলোড করা যায়নি (HTTP ${imgResponse.status})`);
+    return Buffer.from(await imgResponse.arrayBuffer());
+  }
+  throw new Error("এডিট করা ছবি পাওয়া যায়নি।");
 }
 
 async function finishAiEdit(ctx, imageUrl, prompt) {
