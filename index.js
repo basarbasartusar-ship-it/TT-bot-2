@@ -552,9 +552,12 @@ async function showAiImagePrompt(ctx) {
   );
 }
 
+const POLLINATIONS_API_KEY = process.env.POLLINATIONS_API_KEY || "";
+
 async function fetchAiImageBuffer(prompt) {
   const seed = Math.floor(Math.random() * 1_000_000_000);
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}`;
+  let url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}`;
+  if (POLLINATIONS_API_KEY) url += `&key=${encodeURIComponent(POLLINATIONS_API_KEY)}`;
   const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
   if (!response.ok) throw new Error(`ইমেজ তৈরি করা যায়নি (HTTP ${response.status})`);
   const buffer = Buffer.from(await response.arrayBuffer());
@@ -618,9 +621,15 @@ async function handleAiEditPhoto(ctx) {
 
 async function fetchAiEditBuffer(imageUrl, prompt) {
   const seed = Math.floor(Math.random() * 1_000_000_000);
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=kontext&image=${encodeURIComponent(imageUrl)}&nologo=true&seed=${seed}`;
+  let url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=kontext&image=${encodeURIComponent(imageUrl)}&nologo=true&seed=${seed}`;
+  if (POLLINATIONS_API_KEY) url += `&key=${encodeURIComponent(POLLINATIONS_API_KEY)}`;
   const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-  if (!response.ok) throw new Error(`ইমেজ এডিট করা যায়নি (HTTP ${response.status})`);
+  if (!response.ok) {
+    if (response.status === 500 && !POLLINATIONS_API_KEY) {
+      throw new Error("এডিট মডেলে এখন ফ্রি অ্যাক্সেস নেই। enter.pollinations.ai থেকে ফ্রি API key বানিয়ে Render-এর Environment-এ POLLINATIONS_API_KEY বসাও।");
+    }
+    throw new Error(`ইমেজ এডিট করা যায়নি (HTTP ${response.status})`);
+  }
   const buffer = Buffer.from(await response.arrayBuffer());
   if (buffer.length < 1000) throw new Error("এডিট ব্যর্থ হয়েছে, আবার চেষ্টা করো।");
   return buffer;
