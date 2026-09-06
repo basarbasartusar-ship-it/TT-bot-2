@@ -273,6 +273,7 @@ function mainMenuRows(ctx) {
     [btn("Facebook Video", "fb:start", "success")],
     [btn("YouTube Video", "yt:start", "success")],
     [btn("AI Image", "ai:start", "success")],
+    [btn("AI Edit Image", "aiedit:start", "success")],
     [btn("Settings", "settings"), btn("Help", "help")],
   ];
   if (isAdmin(ctx.from?.id)) rows.push([btn("Admin Panel", "admin")]);
@@ -578,6 +579,70 @@ async function finishAiImage(ctx, prompt) {
   );
 }
 
+async function showAiEditPrompt(ctx) {
+  saveSession(ctx.chat.id, { state: "awaiting_ai_edit_photo", temp_data: {} });
+  await sendScreen(
+    ctx.chat.id,
+    "<b>🖌️ AI Edit Image</b>\n\n📷 যে ছবিটা এডিট করতে চাও সেটা পাঠাও।",
+    [[btn("Cancel", "menu", "danger")]],
+    ctx,
+  );
+}
+
+async function handleAiEditPhoto(ctx) {
+  await deleteIncoming(ctx);
+  await sendScreen(ctx.chat.id, "<b>⏫ ছবি নেওয়া হচ্ছে…</b>\n\n🔄 একটু অপেক্ষা করো।", [], ctx);
+  try {
+    const photo = ctx.message.photo.at(-1);
+    const fileUrl = await ctx.telegram.getFileLink(photo.file_id);
+    const response = await fetch(fileUrl.href || fileUrl);
+    if (!response.ok) throw new Error(`Telegram file download failed with ${response.status}.`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const uploaded = await uploadImage(buffer, `ai-edit-src-${ctx.from.id}-${Date.now()}.jpg`, "image/jpeg");
+    saveSession(ctx.chat.id, { state: "awaiting_ai_edit_text", temp_data: { sourceImageUrl: uploaded.url } });
+    await sendScreen(
+      ctx.chat.id,
+      "<b>✍️ কী পরিবর্তন করতে চাও লিখো</b>\n\nযেমন: <i>make the sky purple and add fireworks</i>",
+      [[btn("Cancel", "menu", "danger")]],
+      ctx,
+    );
+  } catch (error) {
+    await sendScreen(
+      ctx.chat.id,
+      `<b>⚠️ ছবি নেওয়া যায়নি</b>\n\n${escapeHtml(error.message)}`,
+      [[btn("Try Again", "aiedit:start", "success"), btn("Back to Menu", "menu")]],
+      ctx,
+    );
+  }
+}
+
+async function fetchAiEditBuffer(imageUrl, prompt) {
+  const seed = Math.floor(Math.random() * 1_000_000_000);
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=kontext&image=${encodeURIComponent(imageUrl)}&nologo=true&seed=${seed}`;
+  const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!response.ok) throw new Error(`ইমেজ এডিট করা যায়নি (HTTP ${response.status})`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length < 1000) throw new Error("এডিট ব্যর্থ হয়েছে, আবার চেষ্টা করো।");
+  return buffer;
+}
+
+async function finishAiEdit(ctx, imageUrl, prompt) {
+  const statusMessageId = getSession(ctx.chat.id).active_message_id;
+  const buffer = await fetchAiEditBuffer(imageUrl, prompt);
+  clearSession(ctx.chat.id);
+  if (statusMessageId) {
+    await bot.telegram.deleteMessage(ctx.chat.id, statusMessageId).catch(() => {});
+  }
+  await ctx.replyWithPhoto(
+    { source: buffer, filename: "ai-edit.png" },
+    {
+      caption: boldUiText(`<b>✅ এডিট হয়ে গেছে</b>\n\n📝 ${escapeHtml(prompt)}`),
+      parse_mode: "HTML",
+      ...keyboard([[btn("Edit Another", "aiedit:restart", "success"), btn("Back to Menu", "menu:media")]]),
+    },
+  );
+}
+
 async function uploadImage(buffer, filename, contentType) {
   const form = new FormData();
   const safeContentType = contentType?.startsWith("image/") ? contentType : "image/jpeg";
@@ -597,6 +662,10 @@ async function deleteRemoteImage(imageId) {
 async function processPhoto(ctx) {
   registerUser(ctx);
   let session = getSession(ctx.chat.id);
+  if (session.state === "awaiting_ai_edit_photo") {
+    await handleAiEditPhoto(ctx);
+    return;
+  }
   if (session.state !== "awaiting_photo") {
     saveSession(ctx.chat.id, { state: "awaiting_photo", temp_data: {} });
     session = getSession(ctx.chat.id);
@@ -860,6 +929,11 @@ bot.action("ai:restart", async (ctx) => {
   await ctx.deleteMessage().catch(() => {});
   await showAiImagePrompt(ctx);
 });
+bot.action("aiedit:start", showAiEditPrompt);
+bot.action("aiedit:restart", async (ctx) => {
+  await ctx.deleteMessage().catch(() => {});
+  await showAiEditPrompt(ctx);
+});
 bot.action("links:0", (ctx) => showLinks(ctx, 0));
 bot.action(/^links:(\d+)$/, (ctx) => showLinks(ctx, Number(ctx.match[1])));
 bot.action("settings", showSettings);
@@ -988,6 +1062,30 @@ bot.on("text", async (ctx) => {
       return;
     }
     await finishUpload(ctx, { ...session.temp_data, expiresAt });
+    return;
+  }
+  if (session.state === "awaiting_ai_edit_text") {
+    await deleteIncoming(ctx);
+    if (text.trim().length < 3) {
+      await sendScreen(
+        ctx.chat.id,
+        "<b>⚠️ একটু বড় করে লেখো</b>\n\n✍️ কী পরিবর্তন করতে চাও একটু বিস্তারিত লিখো।",
+        [[btn("Cancel", "menu", "danger")]],
+        ctx,
+      );
+      return;
+    }
+    await sendScreen(ctx.chat.id, "<b>🎨 এডিট করা হচ্ছে…</b>\n\n🔄 এটা ২০-৩০ সেকেন্ড লাগতে পারে।", [], ctx);
+    try {
+      await finishAiEdit(ctx, session.temp_data.sourceImageUrl, text.trim());
+    } catch (error) {
+      await sendScreen(
+        ctx.chat.id,
+        `<b>⚠️ এডিট করা যায়নি</b>\n\n${escapeHtml(error.message)}`,
+        [[btn("Try Again", "aiedit:start", "success"), btn("Back to Menu", "menu")]],
+        ctx,
+      );
+    }
     return;
   }
   if (session.state === "awaiting_ai_prompt") {
