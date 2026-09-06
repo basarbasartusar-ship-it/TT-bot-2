@@ -272,6 +272,7 @@ function mainMenuRows(ctx) {
     [btn("TikTok Video", "tiktok:start", "success")],
     [btn("Facebook Video", "fb:start", "success")],
     [btn("YouTube Video", "yt:start", "success")],
+    [btn("AI Image", "ai:start", "success")],
     [btn("Settings", "settings"), btn("Help", "help")],
   ];
   if (isAdmin(ctx.from?.id)) rows.push([btn("Admin Panel", "admin")]);
@@ -536,6 +537,43 @@ async function finishYoutubeDownload(ctx, link) {
       caption: boldUiText(`<b>✅ ভিডিও রেডি</b>\n\n🎬 ${escapeHtml(title)}\n\n📥 ভিডিওর নিচের ডাউনলোড আইকনে চেপে গ্যালারিতে সেভ করো।`),
       parse_mode: "HTML",
       ...keyboard([[btn("Another Video", "yt:restart", "success"), btn("Back to Menu", "menu:media")]]),
+    },
+  );
+}
+
+async function showAiImagePrompt(ctx) {
+  saveSession(ctx.chat.id, { state: "awaiting_ai_prompt", temp_data: {} });
+  await sendScreen(
+    ctx.chat.id,
+    "<b>🤖 AI Image</b>\n\n✍️ কী ছবি বানাতে চাও লিখে পাঠাও।\nযেমন: <i>a tiger flying in the sky, realistic</i>\n\n(ইংরেজিতে লিখলে সাধারণত ভালো ফলাফল পাওয়া যায়।)",
+    [[btn("Cancel", "menu", "danger")]],
+    ctx,
+  );
+}
+
+async function fetchAiImageBuffer(prompt) {
+  const seed = Math.floor(Math.random() * 1_000_000_000);
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}`;
+  const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!response.ok) throw new Error(`ইমেজ তৈরি করা যায়নি (HTTP ${response.status})`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length < 1000) throw new Error("ইমেজ তৈরি ব্যর্থ হয়েছে, আবার চেষ্টা করো।");
+  return buffer;
+}
+
+async function finishAiImage(ctx, prompt) {
+  const statusMessageId = getSession(ctx.chat.id).active_message_id;
+  const buffer = await fetchAiImageBuffer(prompt);
+  clearSession(ctx.chat.id);
+  if (statusMessageId) {
+    await bot.telegram.deleteMessage(ctx.chat.id, statusMessageId).catch(() => {});
+  }
+  await ctx.replyWithPhoto(
+    { source: buffer, filename: "ai-image.png" },
+    {
+      caption: boldUiText(`<b>✅ ছবি রেডি</b>\n\n📝 ${escapeHtml(prompt)}`),
+      parse_mode: "HTML",
+      ...keyboard([[btn("Another Image", "ai:restart", "success"), btn("Back to Menu", "menu:media")]]),
     },
   );
 }
@@ -817,6 +855,11 @@ bot.action("yt:restart", async (ctx) => {
   await ctx.deleteMessage().catch(() => {});
   await showYoutubePrompt(ctx);
 });
+bot.action("ai:start", showAiImagePrompt);
+bot.action("ai:restart", async (ctx) => {
+  await ctx.deleteMessage().catch(() => {});
+  await showAiImagePrompt(ctx);
+});
 bot.action("links:0", (ctx) => showLinks(ctx, 0));
 bot.action(/^links:(\d+)$/, (ctx) => showLinks(ctx, Number(ctx.match[1])));
 bot.action("settings", showSettings);
@@ -945,6 +988,30 @@ bot.on("text", async (ctx) => {
       return;
     }
     await finishUpload(ctx, { ...session.temp_data, expiresAt });
+    return;
+  }
+  if (session.state === "awaiting_ai_prompt") {
+    await deleteIncoming(ctx);
+    if (text.trim().length < 3) {
+      await sendScreen(
+        ctx.chat.id,
+        "<b>⚠️ একটু বড় করে লেখো</b>\n\n✍️ ছবিতে কী দেখতে চাও একটু বিস্তারিত লিখো।",
+        [[btn("Try Again", "ai:start", "success"), btn("Back to Menu", "menu")]],
+        ctx,
+      );
+      return;
+    }
+    await sendScreen(ctx.chat.id, "<b>🎨 ছবি বানানো হচ্ছে…</b>\n\n🔄 এটা ২০-৩০ সেকেন্ড লাগতে পারে, অপেক্ষা করো।", [], ctx);
+    try {
+      await finishAiImage(ctx, text.trim());
+    } catch (error) {
+      await sendScreen(
+        ctx.chat.id,
+        `<b>⚠️ ছবি বানানো যায়নি</b>\n\n${escapeHtml(error.message)}`,
+        [[btn("Try Again", "ai:start", "success"), btn("Back to Menu", "menu")]],
+        ctx,
+      );
+    }
     return;
   }
   if (session.state === "awaiting_yt_link") {
