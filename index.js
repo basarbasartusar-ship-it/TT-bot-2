@@ -267,12 +267,9 @@ function mainMenuText(ctx) {
 
 function mainMenuRows(ctx) {
   const rows = [
-    [btn("Upload Image", "upload:start", "success")],
-    [btn("My Links", "links:0")],
-    [btn("TikTok Video", "tiktok:start", "success")],
-    [btn("Facebook Video", "fb:start", "success")],
-    [btn("YouTube Video", "yt:start", "success")],
-    [btn("AI Image", "ai:start", "success")],
+    [btn("Upload Image", "upload:start", "success"), btn("My Links", "links:0")],
+    [btn("TikTok Video", "tiktok:start", "success"), btn("Facebook Video", "fb:start", "success")],
+    [btn("YouTube Video", "yt:start", "success"), btn("AI Image", "ai:start", "success")],
     [btn("AI Edit Image", "aiedit:start", "success")],
     [btn("Settings", "settings"), btn("Help", "help")],
   ];
