@@ -271,6 +271,7 @@ function mainMenuRows(ctx) {
     [btn("TikTok Video", "tiktok:start", "success"), btn("Facebook Video", "fb:start", "success")],
     [btn("YouTube Video", "yt:start", "success"), btn("AI Image", "ai:start", "success")],
     [btn("AI Edit Image", "aiedit:start", "success")],
+    [btn("TikTok Username", "uname:start", "success")],
     [btn("Settings", "settings"), btn("Help", "help")],
   ];
   if (isAdmin(ctx.from?.id)) rows.push([btn("Admin Panel", "admin")]);
@@ -668,6 +669,64 @@ async function finishAiEdit(ctx, imageUrl, prompt) {
   );
 }
 
+const USERNAME_STYLISH_MAP = {
+  a: "𝓪", b: "𝓫", c: "𝓬", d: "𝓭", e: "𝓮", f: "𝓯", g: "𝓰", h: "𝓱", i: "𝓲", j: "𝓳", k: "𝓴", l: "𝓵",
+  m: "𝓶", n: "𝓷", o: "𝓸", p: "𝓹", q: "𝓺", r: "𝓻", s: "𝓼", t: "𝓽", u: "𝓾", v: "𝓿", w: "𝔀", x: "𝔁",
+  y: "𝔂", z: "𝔃", A: "𝓐", B: "𝓑", C: "𝓒", D: "𝓓", E: "𝓔", F: "𝓕", G: "𝓖", H: "𝓗", I: "𝓘", J: "𝓙",
+  K: "𝓚", L: "𝓛", M: "𝓜", N: "𝓝", O: "𝓞", P: "𝓟", Q: "𝓠", R: "𝓡", S: "𝓢", T: "𝓣", U: "𝓤", V: "𝓥",
+  W: "𝓦", X: "𝓧", Y: "𝓨", Z: "𝓩",
+};
+const USERNAME_WORDS = [
+  "Princess", "Queen", "Angel", "Barbie", "Cutie", "Doll", "Diva", "Rose", "Moon", "Star",
+  "Baby", "Kitty", "Fairy", "Shona", "Pari", "Rani", "Jaan", "Nawabzadi", "Misty", "Cherry",
+];
+const USERNAME_DECORATORS = ["♡", "✿", "☆", "꧁", "꧂", "𖤐", "✧", "•", "彡", "❀"];
+
+function toStylishFont(text) {
+  return text
+    .split("")
+    .map((ch) => USERNAME_STYLISH_MAP[ch] || ch)
+    .join("");
+}
+
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function generateStylishUsername() {
+  const word = pickRandom(USERNAME_WORDS);
+  const styled = toStylishFont(word);
+  const num = Math.floor(Math.random() * 90 + 10);
+  const left = pickRandom(USERNAME_DECORATORS);
+  const right = pickRandom(USERNAME_DECORATORS);
+  const variants = [
+    `${left}${styled}${right}`,
+    `${styled}${num}`,
+    `${left} ${styled} ${right}`,
+    `${styled}_${num}`,
+    `xX${styled}Xx`,
+    `${left}${word}${right}`,
+  ];
+  return pickRandom(variants);
+}
+
+function buildUsernameScreenText() {
+  const list = new Set();
+  while (list.size < 8) list.add(generateStylishUsername());
+  const lines = [...list].map((u, i) => `${i + 1}. <code>${escapeHtml(u)}</code>`).join("\n");
+  return `<b>✨ TikTok স্টাইলিশ ইউজারনেম</b>\n\n${lines}\n\n👆 নামের উপর চেপে ধরলে কপি হয়ে যাবে।`;
+}
+
+async function showUsernameSuggestions(ctx) {
+  saveSession(ctx.chat.id, { state: "idle", temp_data: {} });
+  await sendScreen(
+    ctx.chat.id,
+    buildUsernameScreenText(),
+    [[btn("Generate More", "uname:more", "success"), btn("Back to Menu", "menu")]],
+    ctx,
+  );
+}
+
 async function uploadImage(buffer, filename, contentType) {
   const form = new FormData();
   const safeContentType = contentType?.startsWith("image/") ? contentType : "image/jpeg";
@@ -929,6 +988,8 @@ bot.command("settings", showSettings);
 bot.command("help", showHelp);
 
 bot.action("menu", showMain);
+bot.action("uname:start", showUsernameSuggestions);
+bot.action("uname:more", showUsernameSuggestions);
 bot.action("upload:start", showUploadPhoto);
 bot.action("tiktok:start", showTiktokPrompt);
 bot.action("tiktok:restart", async (ctx) => {
