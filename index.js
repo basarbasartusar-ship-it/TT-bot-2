@@ -271,7 +271,7 @@ function mainMenuRows(ctx) {
     [btn("TikTok Video", "tiktok:start", "success"), btn("Facebook Video", "fb:start", "success")],
     [btn("YouTube Video", "yt:start", "success"), btn("AI Image", "ai:start", "success")],
     [btn("AI Edit Image", "aiedit:start", "success")],
-    [btn("TikTok Username", "uname:start", "success")],
+    [btn("TikTok Username", "uname:start", "success"), btn("🎬 Short Video", "short:start", "success")],
     [btn("Settings", "settings"), btn("Help", "help")],
   ];
   if (isAdmin(ctx.from?.id)) rows.push([btn("Admin Panel", "admin")]);
@@ -408,6 +408,83 @@ async function fetchVideoBuffer(videoUrl) {
   if (!response.ok) throw new Error(`ভিডিও ডাউনলোড ব্যর্থ (HTTP ${response.status})`);
   return Buffer.from(await response.arrayBuffer());
 }
+
+// ---------- Short Video (TikTok trending feed) — modular, separate from the TikTok downloader ----------
+const SHORT_VIDEO_REGION = process.env.SHORT_VIDEO_REGION || "US";
+const SHORT_VIDEO_HISTORY_LIMIT = 40;
+
+async function fetchTrendingBatch(count = 30) {
+  const url = `https://www.tikwm.com/api/feed/list?region=${encodeURIComponent(SHORT_VIDEO_REGION)}&count=${count}`;
+  const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!response.ok) throw new Error(`ট্রেন্ডিং ফিড HTTP ${response.status}`);
+  const body = await response.json().catch(() => null);
+  if (!body || body.code !== 0 || !Array.isArray(body.data) || body.data.length === 0) {
+    throw new Error(body?.msg || "এই মুহূর্তে কোনো ভিডিও পাওয়া যায়নি।");
+  }
+  return body.data;
+}
+
+function pickUnseenVideo(list, shownIds) {
+  const shuffled = [...list].sort(() => Math.random() - 0.5);
+  return shuffled.find((v) => !shownIds.includes(String(v.video_id))) || shuffled[0];
+}
+
+async function deliverShortVideo(ctx, { replacePrevious = false } = {}) {
+  if (replacePrevious) {
+    await ctx.deleteMessage().catch(() => {});
+  }
+  const session = getSession(ctx.chat.id);
+  let shown = Array.isArray(session.temp_data?.shortShown) ? session.temp_data.shortShown : [];
+  const retryRow = [[btn("⏭️ Try Again", "short:next", "success"), btn("🔙 Back", "menu")]];
+
+  let video;
+  try {
+    const batch = await fetchTrendingBatch(30);
+    video = pickUnseenVideo(batch, shown);
+  } catch (error) {
+    await ctx.reply(`⚠️ ভিডিও আনা যায়নি।\n\n${error.message}`, keyboard(retryRow));
+    return;
+  }
+
+  const videoUrl = video.play || video.wmplay || video.hdplay;
+  if (!videoUrl) {
+    await ctx.reply("⚠️ ভিডিও লিংক পাওয়া যায়নি, আবার চেষ্টা করো।", keyboard(retryRow));
+    return;
+  }
+
+  let buffer;
+  try {
+    buffer = await fetchVideoBuffer(videoUrl);
+  } catch (error) {
+    await ctx.reply(`⚠️ ভিডিও ডাউনলোড করা যায়নি।\n\n${escapeHtml(error.message)}`, keyboard(retryRow));
+    return;
+  }
+
+  shown.push(String(video.video_id));
+  if (shown.length > SHORT_VIDEO_HISTORY_LIMIT) shown = shown.slice(-SHORT_VIDEO_HISTORY_LIMIT);
+  saveSession(ctx.chat.id, { state: "idle", temp_data: { shortShown: shown } });
+
+  const title = (video.title || "").slice(0, 150);
+  const caption = `<b>🎬 Short Video</b>\n━━━━━━━━━━━━${title ? `\n${escapeHtml(title)}` : ""}`;
+  await ctx.replyWithVideo(
+    { source: buffer, filename: "short.mp4" },
+    {
+      caption: boldUiText(caption),
+      parse_mode: "HTML",
+      ...keyboard([
+        [btn("⏭️ Next Video", "short:next", "success")],
+        [btn("🔄 Refresh", "short:refresh", "success")],
+        [btn("🔙 Back", "menu:media")],
+      ]),
+    },
+  );
+}
+
+async function showShortVideoStart(ctx) {
+  saveSession(ctx.chat.id, { state: "idle", temp_data: { shortShown: [] } });
+  await deliverShortVideo(ctx, { replacePrevious: false });
+}
+// ---------- end Short Video ----------
 
 async function finishTiktokDownload(ctx, link) {
   const statusMessageId = getSession(ctx.chat.id).active_message_id;
@@ -990,6 +1067,13 @@ bot.command("help", showHelp);
 bot.action("menu", showMain);
 bot.action("uname:start", showUsernameSuggestions);
 bot.action("uname:more", showUsernameSuggestions);
+bot.action("short:start", showShortVideoStart);
+bot.action("short:next", async (ctx) => {
+  await deliverShortVideo(ctx, { replacePrevious: true });
+});
+bot.action("short:refresh", async (ctx) => {
+  await deliverShortVideo(ctx, { replacePrevious: true });
+});
 bot.action("upload:start", showUploadPhoto);
 bot.action("tiktok:start", showTiktokPrompt);
 bot.action("tiktok:restart", async (ctx) => {

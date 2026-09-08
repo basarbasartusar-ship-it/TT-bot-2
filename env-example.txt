@@ -1,0 +1,16 @@
+# Telegram bot token from @BotFather
+TOKEN=
+
+# Secret key for the image hosting API (host.tscv.workers.dev)
+IMAGE_API_KEY=
+
+# Optional overrides
+# IMAGE_API_BASE=https://host.tscv.workers.dev
+# PORT=3000
+# DATA_DIR=/var/data
+
+# Free key from enter.pollinations.ai — needed for AI Edit Image (kontext model)
+# POLLINATIONS_API_KEY=
+
+# Optional — region for Short Video trending feed (default: US)
+# SHORT_VIDEO_REGION=US
